@@ -3,10 +3,12 @@ import pandas as pd
 import numpy as np
 import os
 import joblib
+import folium
+from streamlit_folium import st_folium
 
-# ==============================
-# Load Model Files Safely
-# ==============================
+# ==========================================
+# Load Model
+# ==========================================
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -14,18 +16,35 @@ model = joblib.load(os.path.join(BASE_DIR, "xgboost_delivery_model.pkl"))
 scaler = joblib.load(os.path.join(BASE_DIR, "scaler (1).pkl"))
 feature_columns = joblib.load(os.path.join(BASE_DIR, "feature_columns.pkl"))
 
-# ==============================
-# App Title
-# ==============================
+st.set_page_config(page_title="Amazon Delivery Prediction", layout="wide")
 
 st.title("🚚 Amazon Delivery Time Prediction System")
-st.write("Enter order details to predict delivery time.")
 
-# ==============================
-# Location Inputs (For Map)
-# ==============================
+# ==========================================
+# Inputs
+# ==========================================
 
-st.subheader("📍 Location Details")
+col1, col2 = st.columns(2)
+
+with col1:
+    distance = st.number_input("Distance (KM)", min_value=0.0, value=5.0)
+    pickup_delay = st.number_input("Pickup Delay (Minutes)", min_value=0.0, value=10.0)
+    agent_age = st.number_input("Agent Age", min_value=18, max_value=60, value=30)
+    agent_rating = st.slider("Agent Rating", 1.0, 5.0, 4.0)
+    order_hour = st.slider("Order Hour", 0, 23, 12)
+
+with col2:
+    traffic_low = st.checkbox("Traffic Low")
+    traffic_medium = st.checkbox("Traffic Medium")
+    traffic_jam = st.checkbox("Traffic Jam")
+
+    weather_sunny = st.checkbox("Weather Sunny")
+    weather_stormy = st.checkbox("Weather Stormy")
+    weather_fog = st.checkbox("Weather Fog")
+
+    is_weekend = st.checkbox("Weekend Order")
+
+st.subheader("📍 Delivery Route")
 
 store_lat = st.number_input("Store Latitude", value=19.0760)
 store_lon = st.number_input("Store Longitude", value=72.8777)
@@ -33,96 +52,60 @@ store_lon = st.number_input("Store Longitude", value=72.8777)
 drop_lat = st.number_input("Drop Latitude", value=19.2183)
 drop_lon = st.number_input("Drop Longitude", value=72.9781)
 
-# Show Map
-map_data = pd.DataFrame({
-    "lat": [store_lat, drop_lat],
-    "lon": [store_lon, drop_lon]
-})
+# ==========================================
+# Create Real Map (Folium)
+# ==========================================
 
-st.map(map_data)
+m = folium.Map(location=[store_lat, store_lon], zoom_start=12)
 
-# ==============================
-# Delivery Inputs
-# ==============================
+# Store marker
+folium.Marker(
+    [store_lat, store_lon],
+    tooltip="Store Location",
+    icon=folium.Icon(color="green", icon="shopping-cart")
+).add_to(m)
 
-st.subheader("📦 Order Details")
+# Drop marker
+folium.Marker(
+    [drop_lat, drop_lon],
+    tooltip="Delivery Location",
+    icon=folium.Icon(color="red", icon="home")
+).add_to(m)
 
-distance = st.number_input("Distance (KM)", min_value=0.0, value=5.0)
-pickup_delay = st.number_input("Pickup Delay (Minutes)", min_value=0.0, value=10.0)
-agent_age = st.number_input("Agent Age", min_value=18, max_value=60, value=30)
-agent_rating = st.slider("Agent Rating", 1.0, 5.0, 4.0)
-order_hour = st.slider("Order Hour", 0, 23, 12)
+# Draw route line
+folium.PolyLine(
+    [[store_lat, store_lon], [drop_lat, drop_lon]],
+    tooltip="Delivery Route"
+).add_to(m)
 
-st.subheader("🚦 Traffic Conditions")
-traffic_low = st.checkbox("Traffic Low")
-traffic_medium = st.checkbox("Traffic Medium")
-traffic_jam = st.checkbox("Traffic Jam")
+st_folium(m, width=800, height=500)
 
-st.subheader("🌤 Weather Conditions")
-weather_sunny = st.checkbox("Weather Sunny")
-weather_stormy = st.checkbox("Weather Stormy")
-weather_fog = st.checkbox("Weather Fog")
-
-is_weekend = st.checkbox("Weekend Order")
-
-# ==============================
-# Prepare Input Dictionary
-# ==============================
-
-input_dict = {col: 0 for col in feature_columns}
-
-# Numeric Features
-if "Distance_KM" in input_dict:
-    input_dict["Distance_KM"] = distance
-
-if "Pickup_Delay_Min" in input_dict:
-    input_dict["Pickup_Delay_Min"] = pickup_delay
-
-if "Agent_Age" in input_dict:
-    input_dict["Agent_Age"] = agent_age
-
-if "Agent_Rating" in input_dict:
-    input_dict["Agent_Rating"] = agent_rating
-
-if "order_hour" in input_dict:
-    input_dict["order_hour"] = order_hour
-
-if "Is_Weekend" in input_dict:
-    input_dict["Is_Weekend"] = int(is_weekend)
-
-# Traffic Features
-if "Traffic_Low" in input_dict:
-    input_dict["Traffic_Low"] = int(traffic_low)
-
-if "Traffic_Medium" in input_dict:
-    input_dict["Traffic_Medium"] = int(traffic_medium)
-
-if "Traffic_Jam" in input_dict:
-    input_dict["Traffic_Jam"] = int(traffic_jam)
-
-# Weather Features
-if "Weather_Sunny" in input_dict:
-    input_dict["Weather_Sunny"] = int(weather_sunny)
-
-if "Weather_Stormy" in input_dict:
-    input_dict["Weather_Stormy"] = int(weather_stormy)
-
-if "Weather_Fog" in input_dict:
-    input_dict["Weather_Fog"] = int(weather_fog)
-
-# ==============================
-# Convert to DataFrame
-# ==============================
-
-input_df = pd.DataFrame([input_dict])
-
-# Scale Input
-input_scaled = scaler.transform(input_df)
-
-# ==============================
+# ==========================================
 # Prediction
-# ==============================
+# ==========================================
 
 if st.button("Predict Delivery Time"):
+
+    input_dict = {col: 0 for col in feature_columns}
+
+    input_dict["Distance_KM"] = distance
+    input_dict["Pickup_Delay_Min"] = pickup_delay
+    input_dict["Agent_Age"] = agent_age
+    input_dict["Agent_Rating"] = agent_rating
+    input_dict["order_hour"] = order_hour
+    input_dict["Is_Weekend"] = int(is_weekend)
+
+    input_dict["Traffic_Low"] = int(traffic_low)
+    input_dict["Traffic_Medium"] = int(traffic_medium)
+    input_dict["Traffic_Jam"] = int(traffic_jam)
+
+    input_dict["Weather_Sunny"] = int(weather_sunny)
+    input_dict["Weather_Stormy"] = int(weather_stormy)
+    input_dict["Weather_Fog"] = int(weather_fog)
+
+    input_df = pd.DataFrame([input_dict])
+    input_scaled = scaler.transform(input_df)
+
     prediction = model.predict(input_scaled)
+
     st.success(f"📦 Estimated Delivery Time: {round(prediction[0], 2)} minutes")
