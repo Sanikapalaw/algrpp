@@ -1,22 +1,29 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
+import os
 import joblib
 
-# =====================
-# Load Saved Files
-# =====================
-model = joblib.load("xgboost_delivery_model.pkl")
-scaler = joblib.load("scaler.pkl")
-feature_columns = joblib.load("feature_columns.pkl")
+# ==============================
+# Load Model Files Safely
+# ==============================
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+model = joblib.load(os.path.join(BASE_DIR, "xgboost_delivery_model.pkl"))
+scaler = joblib.load(os.path.join(BASE_DIR, "scaler (1).pkl"))
+feature_columns = joblib.load(os.path.join(BASE_DIR, "feature_columns.pkl"))
+
+# ==============================
+# App Title
+# ==============================
 
 st.title("🚚 Amazon Delivery Time Prediction System")
-
 st.write("Enter order details to predict delivery time.")
 
-# =====================
+# ==============================
 # User Inputs
-# =====================
+# ==============================
 
 distance = st.number_input("Distance (KM)", min_value=0.0, value=5.0)
 pickup_delay = st.number_input("Pickup Delay (Minutes)", min_value=0.0, value=10.0)
@@ -24,23 +31,25 @@ agent_age = st.number_input("Agent Age", min_value=18, max_value=60, value=30)
 agent_rating = st.slider("Agent Rating", 1.0, 5.0, 4.0)
 order_hour = st.slider("Order Hour", 0, 23, 12)
 
+st.subheader("Traffic Conditions")
 traffic_low = st.checkbox("Traffic Low")
 traffic_medium = st.checkbox("Traffic Medium")
 traffic_jam = st.checkbox("Traffic Jam")
 
+st.subheader("Weather Conditions")
 weather_sunny = st.checkbox("Weather Sunny")
 weather_stormy = st.checkbox("Weather Stormy")
 weather_fog = st.checkbox("Weather Fog")
 
 is_weekend = st.checkbox("Weekend Order")
 
-# =====================
-# Prepare Input
-# =====================
+# ==============================
+# Prepare Input Dictionary
+# ==============================
 
 input_dict = {col: 0 for col in feature_columns}
 
-# Fill numeric features (must match training names)
+# Numeric Features
 if "Distance_KM" in input_dict:
     input_dict["Distance_KM"] = distance
 
@@ -59,7 +68,7 @@ if "order_hour" in input_dict:
 if "Is_Weekend" in input_dict:
     input_dict["Is_Weekend"] = int(is_weekend)
 
-# Traffic
+# Traffic Features
 if "Traffic_Low" in input_dict:
     input_dict["Traffic_Low"] = int(traffic_low)
 
@@ -69,7 +78,7 @@ if "Traffic_Medium" in input_dict:
 if "Traffic_Jam" in input_dict:
     input_dict["Traffic_Jam"] = int(traffic_jam)
 
-# Weather
+# Weather Features
 if "Weather_Sunny" in input_dict:
     input_dict["Weather_Sunny"] = int(weather_sunny)
 
@@ -79,16 +88,19 @@ if "Weather_Stormy" in input_dict:
 if "Weather_Fog" in input_dict:
     input_dict["Weather_Fog"] = int(weather_fog)
 
+# ==============================
 # Convert to DataFrame
+# ==============================
+
 input_df = pd.DataFrame([input_dict])
 
-# Scale
+# Scale Input
 input_scaled = scaler.transform(input_df)
 
-# =====================
+# ==============================
 # Prediction
-# =====================
+# ==============================
 
 if st.button("Predict Delivery Time"):
     prediction = model.predict(input_scaled)
-    st.success(f"Estimated Delivery Time: {round(prediction[0], 2)} minutes")
+    st.success(f"📦 Estimated Delivery Time: {round(prediction[0], 2)} minutes")
