@@ -86,26 +86,38 @@ st_folium(m, width=800, height=500)
 
 if st.button("Predict Delivery Time"):
 
-    input_dict = {col: 0 for col in feature_columns}
+    # Create empty dataframe with EXACT training structure
+    input_df = pd.DataFrame(columns=feature_columns)
 
-    input_dict["Distance_KM"] = distance
-    input_dict["Pickup_Delay_Min"] = pickup_delay
-    input_dict["Agent_Age"] = agent_age
-    input_dict["Agent_Rating"] = agent_rating
-    input_dict["order_hour"] = order_hour
-    input_dict["Is_Weekend"] = int(is_weekend)
+    # Create row filled with zeros
+    row = dict.fromkeys(feature_columns, 0)
 
-    input_dict["Traffic_Low"] = int(traffic_low)
-    input_dict["Traffic_Medium"] = int(traffic_medium)
-    input_dict["Traffic_Jam"] = int(traffic_jam)
+    # Fill required features
+    row["Distance_KM"] = distance
+    row["Pickup_Delay_Min"] = pickup_delay
+    row["Agent_Age"] = agent_age
+    row["Agent_Rating"] = agent_rating
+    row["order_hour"] = order_hour
+    row["Is_Weekend"] = int(is_weekend)
 
-    input_dict["Weather_Sunny"] = int(weather_sunny)
-    input_dict["Weather_Stormy"] = int(weather_stormy)
-    input_dict["Weather_Fog"] = int(weather_fog)
+    row["Traffic_Low"] = int(traffic_low)
+    row["Traffic_Medium"] = int(traffic_medium)
+    row["Traffic_Jam"] = int(traffic_jam)
 
-    input_df = pd.DataFrame([input_dict])
+    row["Weather_Sunny"] = int(weather_sunny)
+    row["Weather_Stormy"] = int(weather_stormy)
+    row["Weather_Fog"] = int(weather_fog)
+
+    # Add row in correct order
+    input_df.loc[0] = row
+
+    # IMPORTANT: Force column order
+    input_df = input_df[feature_columns]
+
+    # Scale
     input_scaled = scaler.transform(input_df)
 
+    # Predict
     prediction = model.predict(input_scaled)
 
     st.success(f"📦 Estimated Delivery Time: {round(prediction[0], 2)} minutes")
