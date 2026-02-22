@@ -22,8 +22,30 @@ st.title("🚚 Amazon Delivery Time Prediction System")
 st.write("Enter order details to predict delivery time.")
 
 # ==============================
-# User Inputs
+# Location Inputs (For Map)
 # ==============================
+
+st.subheader("📍 Location Details")
+
+store_lat = st.number_input("Store Latitude", value=19.0760)
+store_lon = st.number_input("Store Longitude", value=72.8777)
+
+drop_lat = st.number_input("Drop Latitude", value=19.2183)
+drop_lon = st.number_input("Drop Longitude", value=72.9781)
+
+# Show Map
+map_data = pd.DataFrame({
+    "lat": [store_lat, drop_lat],
+    "lon": [store_lon, drop_lon]
+})
+
+st.map(map_data)
+
+# ==============================
+# Delivery Inputs
+# ==============================
+
+st.subheader("📦 Order Details")
 
 distance = st.number_input("Distance (KM)", min_value=0.0, value=5.0)
 pickup_delay = st.number_input("Pickup Delay (Minutes)", min_value=0.0, value=10.0)
@@ -31,12 +53,12 @@ agent_age = st.number_input("Agent Age", min_value=18, max_value=60, value=30)
 agent_rating = st.slider("Agent Rating", 1.0, 5.0, 4.0)
 order_hour = st.slider("Order Hour", 0, 23, 12)
 
-st.subheader("Traffic Conditions")
+st.subheader("🚦 Traffic Conditions")
 traffic_low = st.checkbox("Traffic Low")
 traffic_medium = st.checkbox("Traffic Medium")
 traffic_jam = st.checkbox("Traffic Jam")
 
-st.subheader("Weather Conditions")
+st.subheader("🌤 Weather Conditions")
 weather_sunny = st.checkbox("Weather Sunny")
 weather_stormy = st.checkbox("Weather Stormy")
 weather_fog = st.checkbox("Weather Fog")
