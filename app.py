@@ -12,8 +12,8 @@ from streamlit_folium import st_folium
 # ==========================================
 st.set_page_config(page_title="Smart Delivery Prediction", layout="wide")
 
-st.title("🚚 Smart Delivery Prediction System (Real Routing + ML)")
-st.write("System automatically calculates best route and predicts delivery time.")
+st.title("🚚 Smart Delivery Prediction System")
+st.write("Real road routing + ML-based delivery time prediction")
 
 # ==========================================
 # LOAD MODEL FILES
@@ -25,16 +25,7 @@ scaler = joblib.load(os.path.join(BASE_DIR, "scaler (1).pkl"))
 feature_columns = joblib.load(os.path.join(BASE_DIR, "feature_columns.pkl"))
 
 # ==========================================
-# GET API KEY FROM STREAMLIT SECRETS
-# ==========================================
-try:
-    API_KEY = st.secrets["ORS_API_KEY"].strip()
-except Exception:
-    st.error("❌ API Key not found in Streamlit Secrets.")
-    st.stop()
-
-# ==========================================
-# USER INPUT SECTION
+# USER INPUT
 # ==========================================
 col1, col2 = st.columns(2)
 
@@ -52,60 +43,45 @@ with col2:
     is_weekend = st.checkbox("Weekend Order")
 
 # ==========================================
-# FUNCTION: GET REAL ROUTE FROM API
+# OSRM ROUTING FUNCTION (NO API KEY NEEDED)
 # ==========================================
 def get_route_data(start_lat, start_lon, end_lat, end_lon):
 
-    url = "https://api.openrouteservice.org/v2/directions/driving-car"
+    url = f"http://router.project-osrm.org/route/v1/driving/{start_lon},{start_lat};{end_lon},{end_lat}?overview=full&geometries=geojson"
 
-    headers = {
-        "Authorization": API_KEY,
-        "Content-Type": "application/json"
-    }
-
-    body = {
-        "coordinates": [
-            [start_lon, start_lat],
-            [end_lon, end_lat]
-        ]
-    }
-
-    try:
-        response = requests.post(url, json=body, headers=headers, timeout=20)
-    except requests.exceptions.RequestException as e:
-        raise Exception(f"Connection Error: {e}")
+    response = requests.get(url)
 
     if response.status_code != 200:
-        raise Exception(f"API Error {response.status_code}: {response.text}")
+        raise Exception(f"OSRM Error {response.status_code}")
 
     data = response.json()
 
-    if "routes" not in data:
-        raise Exception("Invalid response from routing service.")
+    if data["code"] != "Ok":
+        raise Exception("No route found")
 
-    distance_km = data["routes"][0]["summary"]["distance"] / 1000
-    duration_min = data["routes"][0]["summary"]["duration"] / 60
+    distance_km = data["routes"][0]["distance"] / 1000
+    duration_min = data["routes"][0]["duration"] / 60
 
     return distance_km, duration_min, data
 
 # ==========================================
 # MAIN BUTTON
 # ==========================================
-if st.button("🚀 Calculate Best Route & Predict"):
+if st.button("🚀 Calculate Route & Predict Delivery Time"):
 
     try:
-        # Get real route info
+        # Get route info from OSRM
         distance_km, route_time, route_data = get_route_data(
             store_lat, store_lon, drop_lat, drop_lon
         )
 
-        st.success(f"📍 Real Route Distance: {round(distance_km, 2)} KM")
-        st.success(f"⏱ Estimated Travel Time: {round(route_time, 2)} minutes")
+        st.success(f"📍 Real Road Distance: {round(distance_km, 2)} KM")
+        st.success(f"⏱ Estimated Driving Time: {round(route_time, 2)} minutes")
 
         # ==========================================
-        # MAP DISPLAY
+        # DISPLAY MAP
         # ==========================================
-        m = folium.Map(location=[store_lat, store_lon], zoom_start=13)
+        m = folium.Map(location=[store_lat, store_lon], zoom_start=12)
 
         folium.Marker(
             [store_lat, store_lon],
@@ -132,7 +108,6 @@ if st.button("🚀 Calculate Best Route & Predict"):
         input_df = pd.DataFrame(columns=feature_columns)
         row = dict.fromkeys(feature_columns, 0)
 
-        # Only fill if feature exists in training
         if "Distance_KM" in row:
             row["Distance_KM"] = distance_km
         if "Pickup_Delay_Min" in row:
@@ -147,10 +122,13 @@ if st.button("🚀 Calculate Best Route & Predict"):
         input_df.loc[0] = row
         input_df = input_df[feature_columns]
 
+        # Scale input
         input_scaled = scaler.transform(input_df)
+
+        # Predict
         prediction = model.predict(input_scaled)
 
         st.success(f"📦 Final Predicted Delivery Time: {round(prediction[0], 2)} minutes")
 
     except Exception as e:
-        st.error(f"❌ Route calculation failed: {e}")
+        st.error(f"❌ Error: {e}")
