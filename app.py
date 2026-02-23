@@ -32,7 +32,6 @@ col1, col2 = st.columns(2)
 with col1:
     store_lat = st.number_input("Store Latitude", value=19.0760)
     store_lon = st.number_input("Store Longitude", value=72.8777)
-
     drop_lat = st.number_input("Drop Latitude", value=19.2183)
     drop_lon = st.number_input("Drop Longitude", value=72.9781)
 
@@ -43,12 +42,10 @@ with col2:
     is_weekend = st.checkbox("Weekend Order")
 
 # ==========================================
-# OSRM ROUTING FUNCTION (NO API KEY NEEDED)
+# OSRM ROUTING FUNCTION
 # ==========================================
 def get_route_data(start_lat, start_lon, end_lat, end_lon):
-
     url = f"http://router.project-osrm.org/route/v1/driving/{start_lon},{start_lat};{end_lon},{end_lat}?overview=full&geometries=geojson"
-
     response = requests.get(url)
 
     if response.status_code != 200:
@@ -65,46 +62,28 @@ def get_route_data(start_lat, start_lon, end_lat, end_lon):
     return distance_km, duration_min, data
 
 # ==========================================
-# MAIN BUTTON
+# SESSION STATE INIT
+# ==========================================
+if "route_data" not in st.session_state:
+    st.session_state.route_data = None
+    st.session_state.distance_km = None
+    st.session_state.route_time = None
+    st.session_state.prediction = None
+
+# ==========================================
+# SINGLE BUTTON (ONLY ONE!)
 # ==========================================
 if st.button("🚀 Calculate Route & Predict Delivery Time"):
 
     try:
-        # Get route info from OSRM
         distance_km, route_time, route_data = get_route_data(
             store_lat, store_lon, drop_lat, drop_lon
         )
 
-        st.success(f"📍 Real Road Distance: {round(distance_km, 2)} KM")
-        st.success(f"⏱ Estimated Driving Time: {round(route_time, 2)} minutes")
+        st.session_state.route_data = route_data
+        st.session_state.distance_km = distance_km
+        st.session_state.route_time = route_time
 
-        # ==========================================
-        # DISPLAY MAP
-        # ==========================================
-        m = folium.Map(location=[store_lat, store_lon], zoom_start=12)
-
-        folium.Marker(
-            [store_lat, store_lon],
-            tooltip="Store",
-            icon=folium.Icon(color="green")
-        ).add_to(m)
-
-        folium.Marker(
-            [drop_lat, drop_lon],
-            tooltip="Delivery Location",
-            icon=folium.Icon(color="red")
-        ).add_to(m)
-
-        coords = route_data["routes"][0]["geometry"]["coordinates"]
-        route_points = [(c[1], c[0]) for c in coords]
-
-        folium.PolyLine(route_points).add_to(m)
-
-        st_folium(m, width=900, height=500)
-
-        # ==========================================
-        # PREPARE ML INPUT
-        # ==========================================
         input_df = pd.DataFrame(columns=feature_columns)
         row = dict.fromkeys(feature_columns, 0)
 
@@ -120,15 +99,34 @@ if st.button("🚀 Calculate Route & Predict Delivery Time"):
             row["Is_Weekend"] = int(is_weekend)
 
         input_df.loc[0] = row
-        input_df = input_df[feature_columns]
-
-        # Scale input
         input_scaled = scaler.transform(input_df)
-
-        # Predict
         prediction = model.predict(input_scaled)
 
-        st.success(f"📦 Final Predicted Delivery Time: {round(prediction[0], 2)} minutes")
+        st.session_state.prediction = prediction[0]
 
     except Exception as e:
         st.error(f"❌ Error: {e}")
+
+# ==========================================
+# DISPLAY RESULTS
+# ==========================================
+if st.session_state.route_data is not None:
+
+    st.success(f"📍 Real Road Distance: {round(st.session_state.distance_km, 2)} KM")
+    st.success(f"⏱ Estimated Driving Time: {round(st.session_state.route_time, 2)} minutes")
+    st.success(f"📦 Final Predicted Delivery Time: {round(st.session_state.prediction, 2)} minutes")
+
+    m = folium.Map(location=[store_lat, store_lon], zoom_start=12)
+
+    folium.Marker([store_lat, store_lon], tooltip="Store",
+                  icon=folium.Icon(color="green")).add_to(m)
+
+    folium.Marker([drop_lat, drop_lon], tooltip="Delivery Location",
+                  icon=folium.Icon(color="red")).add_to(m)
+
+    coords = st.session_state.route_data["routes"][0]["geometry"]["coordinates"]
+    route_points = [(c[1], c[0]) for c in coords]
+
+    folium.PolyLine(route_points).add_to(m)
+
+    st_folium(m, width=900, height=500)
