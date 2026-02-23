@@ -27,7 +27,11 @@ feature_columns = joblib.load(os.path.join(BASE_DIR, "feature_columns.pkl"))
 # ==========================================
 # GET API KEY FROM STREAMLIT SECRETS
 # ==========================================
-API_KEY = st.secrets["ORS_API_KEY"]
+try:
+    API_KEY = st.secrets["ORS_API_KEY"].strip()
+except Exception:
+    st.error("❌ API Key not found in Streamlit Secrets.")
+    st.stop()
 
 # ==========================================
 # USER INPUT SECTION
@@ -66,11 +70,18 @@ def get_route_data(start_lat, start_lon, end_lat, end_lon):
         ]
     }
 
-    response = requests.post(url, json=body, headers=headers)
+    try:
+        response = requests.post(url, json=body, headers=headers, timeout=20)
+    except requests.exceptions.RequestException as e:
+        raise Exception(f"Connection Error: {e}")
+
+    if response.status_code != 200:
+        raise Exception(f"API Error {response.status_code}: {response.text}")
+
     data = response.json()
 
     if "routes" not in data:
-        raise Exception("Routing failed")
+        raise Exception("Invalid response from routing service.")
 
     distance_km = data["routes"][0]["summary"]["distance"] / 1000
     duration_min = data["routes"][0]["summary"]["duration"] / 60
@@ -89,7 +100,7 @@ if st.button("🚀 Calculate Best Route & Predict"):
         )
 
         st.success(f"📍 Real Route Distance: {round(distance_km, 2)} KM")
-        st.success(f"⏱ Estimated Travel Time (Traffic Included): {round(route_time, 2)} minutes")
+        st.success(f"⏱ Estimated Travel Time: {round(route_time, 2)} minutes")
 
         # ==========================================
         # MAP DISPLAY
@@ -121,20 +132,25 @@ if st.button("🚀 Calculate Best Route & Predict"):
         input_df = pd.DataFrame(columns=feature_columns)
         row = dict.fromkeys(feature_columns, 0)
 
-        row["Distance_KM"] = distance_km
-        row["Pickup_Delay_Min"] = pickup_delay
-        row["Agent_Age"] = agent_age
-        row["Agent_Rating"] = agent_rating
-        row["Is_Weekend"] = int(is_weekend)
+        # Only fill if feature exists in training
+        if "Distance_KM" in row:
+            row["Distance_KM"] = distance_km
+        if "Pickup_Delay_Min" in row:
+            row["Pickup_Delay_Min"] = pickup_delay
+        if "Agent_Age" in row:
+            row["Agent_Age"] = agent_age
+        if "Agent_Rating" in row:
+            row["Agent_Rating"] = agent_rating
+        if "Is_Weekend" in row:
+            row["Is_Weekend"] = int(is_weekend)
 
         input_df.loc[0] = row
         input_df = input_df[feature_columns]
 
         input_scaled = scaler.transform(input_df)
-
         prediction = model.predict(input_scaled)
 
         st.success(f"📦 Final Predicted Delivery Time: {round(prediction[0], 2)} minutes")
 
     except Exception as e:
-        st.error("❌ Route calculation failed. Check your API key or coordinates.")
+        st.error(f"❌ Route calculation failed: {e}")
