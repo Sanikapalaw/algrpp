@@ -13,7 +13,7 @@ from streamlit_folium import st_folium
 st.set_page_config(page_title="Smart Delivery Prediction", layout="wide")
 
 st.title("🚚 Smart Delivery Prediction System")
-st.write("Real road routing + ML-based delivery time prediction")
+st.write("Multiple routes + ML-based delivery prediction")
 
 # ==========================================
 # LOAD MODEL FILES
@@ -42,10 +42,12 @@ with col2:
     is_weekend = st.checkbox("Weekend Order")
 
 # ==========================================
-# OSRM ROUTING FUNCTION
+# ROUTING FUNCTION (MULTIPLE ROUTES)
 # ==========================================
 def get_route_data(start_lat, start_lon, end_lat, end_lon):
-    url = f"http://router.project-osrm.org/route/v1/driving/{start_lon},{start_lat};{end_lon},{end_lat}?overview=full&geometries=geojson"
+
+    url = f"http://router.project-osrm.org/route/v1/driving/{start_lon},{start_lat};{end_lon},{end_lat}?overview=full&geometries=geojson&alternatives=true"
+
     response = requests.get(url)
 
     if response.status_code != 200:
@@ -56,33 +58,95 @@ def get_route_data(start_lat, start_lon, end_lat, end_lon):
     if data["code"] != "Ok":
         raise Exception("No route found")
 
-    distance_km = data["routes"][0]["distance"] / 1000
-    duration_min = data["routes"][0]["duration"] / 60
-
-    return distance_km, duration_min, data
+    return data["routes"]
 
 # ==========================================
 # SESSION STATE INIT
 # ==========================================
-if "route_data" not in st.session_state:
-    st.session_state.route_data = None
-    st.session_state.distance_km = None
-    st.session_state.route_time = None
+if "routes" not in st.session_state:
+    st.session_state.routes = None
+
+if "selected_route_index" not in st.session_state:
+    st.session_state.selected_route_index = 0
+
+if "prediction" not in st.session_state:
     st.session_state.prediction = None
 
 # ==========================================
-# SINGLE BUTTON (ONLY ONE!)
+# BUTTON
 # ==========================================
-if st.button("🚀 Calculate Route & Predict Delivery Time"):
+if st.button("🚀 Calculate Routes"):
 
     try:
-        distance_km, route_time, route_data = get_route_data(
-            store_lat, store_lon, drop_lat, drop_lon
+        routes = get_route_data(store_lat, store_lon, drop_lat, drop_lon)
+        st.session_state.routes = routes
+        st.session_state.selected_route_index = 0
+        st.session_state.prediction = None
+
+    except Exception as e:
+        st.error(f"❌ Error: {e}")
+
+# ==========================================
+# DISPLAY ROUTES
+# ==========================================
+if st.session_state.routes is not None:
+
+    routes = st.session_state.routes
+
+    st.subheader("🛣 Available Routes")
+
+    route_options = []
+
+    for i, route in enumerate(routes):
+        distance_km = route["distance"] / 1000
+        duration_min = route["duration"] / 60
+        route_options.append(
+            f"Route {i+1} → {round(distance_km,2)} KM | {round(duration_min,2)} mins"
         )
 
-        st.session_state.route_data = route_data
-        st.session_state.distance_km = distance_km
-        st.session_state.route_time = route_time
+    selected_option = st.selectbox(
+        "Select Route for Prediction",
+        route_options
+    )
+
+    selected_index = route_options.index(selected_option)
+    st.session_state.selected_route_index = selected_index
+
+    # ==========================================
+    # MAP DISPLAY
+    # ==========================================
+    m = folium.Map(location=[store_lat, store_lon], zoom_start=12)
+    colors = ["blue", "red", "purple", "orange"]
+
+    for i, route in enumerate(routes):
+
+        coords = route["geometry"]["coordinates"]
+        route_points = [(c[1], c[0]) for c in coords]
+
+        folium.PolyLine(
+            route_points,
+            color=colors[i % len(colors)],
+            weight=6 if i == selected_index else 3,
+            opacity=0.9 if i == selected_index else 0.4
+        ).add_to(m)
+
+    folium.Marker([store_lat, store_lon],
+                  tooltip="Store",
+                  icon=folium.Icon(color="green")).add_to(m)
+
+    folium.Marker([drop_lat, drop_lon],
+                  tooltip="Delivery Location",
+                  icon=folium.Icon(color="black")).add_to(m)
+
+    st_folium(m, width=900, height=500)
+
+    # ==========================================
+    # PREDICTION BUTTON
+    # ==========================================
+    if st.button("📦 Predict Delivery Time"):
+
+        selected_route = routes[selected_index]
+        distance_km = selected_route["distance"] / 1000
 
         input_df = pd.DataFrame(columns=feature_columns)
         row = dict.fromkeys(feature_columns, 0)
@@ -104,29 +168,10 @@ if st.button("🚀 Calculate Route & Predict Delivery Time"):
 
         st.session_state.prediction = prediction[0]
 
-    except Exception as e:
-        st.error(f"❌ Error: {e}")
-
-# ==========================================
-# DISPLAY RESULTS
-# ==========================================
-if st.session_state.route_data is not None:
-
-    st.success(f"📍 Real Road Distance: {round(st.session_state.distance_km, 2)} KM")
-    st.success(f"⏱ Estimated Driving Time: {round(st.session_state.route_time, 2)} minutes")
-    st.success(f"📦 Final Predicted Delivery Time: {round(st.session_state.prediction, 2)} minutes")
-
-    m = folium.Map(location=[store_lat, store_lon], zoom_start=12)
-
-    folium.Marker([store_lat, store_lon], tooltip="Store",
-                  icon=folium.Icon(color="green")).add_to(m)
-
-    folium.Marker([drop_lat, drop_lon], tooltip="Delivery Location",
-                  icon=folium.Icon(color="red")).add_to(m)
-
-    coords = st.session_state.route_data["routes"][0]["geometry"]["coordinates"]
-    route_points = [(c[1], c[0]) for c in coords]
-
-    folium.PolyLine(route_points).add_to(m)
-
-    st_folium(m, width=900, height=500)
+    # ==========================================
+    # SHOW PREDICTION
+    # ==========================================
+    if st.session_state.prediction is not None:
+        st.success(
+            f"📦 Predicted Delivery Time (Selected Route): {round(st.session_state.prediction,2)} minutes"
+        )
